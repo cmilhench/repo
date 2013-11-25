@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+
+#
+# repo - Minimalistic shell script to add hooks to repositories
+# 
+# Copyright 2013. Colin Milhench. All rights reserved.
+# Released under the MIT License.
+#
+# https://github.com/cmilhench/hooker
+#
+NAME="repo"
+VERSION="0.1.0"
+
+#
+# Output usage information.
+#
+
+
+usage() {
+  cat <<-EOF
+  
+  Usage: $NAME [options] <command> [arg [arg [...]]]
+  
+  Options:
+
+    -V, --version        output program version
+    -h, --help           output help information
+    
+  Commands:
+
+    init                 Create a repository and working directory
+    [rm|remove]          Remove repository and working directory
+    
+  Example:
+  
+  $NAME init ~/repo.git
+  $NAME remove ~/repo.git
+  
+EOF
+}
+
+#
+# Abort with <msg>
+#
+
+abort() {
+  echo
+  echo "  $@" 1>&2
+  echo
+  exit 1
+}
+
+#
+# Log <msg>.
+#
+
+log() {
+  echo "  ○ $@"
+}
+
+#
+# Output version.
+#
+
+version() {
+  echo $VERSION
+}
+
+
+#
+# Run setup.
+#
+
+init() {
+  local repo=$1
+  local path=$1
+  
+  [[ $repo == *".git" ]] || repo=$repo.git
+  [[ $path == *".git" ]] && path=${repo%.git}
+  [ -e $repo ] && abort $repo exists.
+  [ -e $path ] && abort $path exists.
+  
+  # Create repo
+  git init --bare $repo > /dev/null
+  test $? -eq 0 || abort setup repo failed
+  # Create paths
+  mkdir -p $path/{shared/{logs,pids},source}
+  test $? -eq 0 || abort setup paths failed
+  # 2) create hook
+  path="`cd $path; pwd`"
+  cat > $repo/hooks/pre-receive <<EOF
+#!/usr/bin/env bash
+set -eo pipefail;
+cat | $NAME hook $path
+EOF
+  test $? -eq 0 || abort setup hook failed
+  # 4) enable hook execution
+  chmod +x $repo/hooks/pre-receive
+  test $? -eq 0 || abort setup hook execution failed
+  # Complete
+  log init complete
+}
+
+#
+# git-hook.
+#
+
+hook() {
+  local path=$1/source/
+  while read oldrev newrev refname; do
+    if [[ $refname = "refs/heads/master" ]] ; then
+      GIT_WORK_TREE=$path git checkout -f $newrev > /dev/null
+      GIT_WORK_TREE=$path git clean -fdx > /dev/null
+    fi
+  done
+}
+
+#
+# remove.
+#
+
+remove() {
+  local repo=$1
+  local path=$1
+  
+  [[ $repo == *".git" ]] || repo=$repo.git
+  [[ $path == *".git" ]] && path=${repo%.git}
+  [ -e $repo ] || abort $repo doesn\'t exist.
+  [ -e $path ] || abort $path doesn\'t exist.
+  
+  # Remove paths
+  rm -fr $path
+  
+  # Remove repo
+  rm -fr $repo
+  
+  # Complete
+  log remove complete
+}
+
+
+
+
+# parse argv
+
+while test $# -ne 0; do
+  arg=$1; shift
+  case $arg in
+    -h|--help) usage; exit ;;
+    -V|--version) version; exit ;;
+    init) init $@; exit ;;
+    hook) git-hook $@; exit ;;
+    rm|remove) remove $@; exit ;;
+    *) abort unrecognised command $arg ;;
+  esac
+done
