@@ -105,7 +105,7 @@ EOF
 # git-hook.
 #
 
-hook() {
+git-hook() {
   local path=$1/source/
   while read oldrev newrev refname; do
     if [[ $refname = "refs/heads/master" ]] ; then
